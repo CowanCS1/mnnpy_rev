@@ -76,7 +76,7 @@ def orthog(Y, X):
 
 
 def invcheck(x):
-    eps2 = 2 * np.finfo(np.float).eps
+    eps2 = 2 * np.finfo(np.float64).eps  # np.float removed in numpy>=1.24 (mnnpy_rev fix)
     if(x > eps2):
         x = 1 / x
     else:

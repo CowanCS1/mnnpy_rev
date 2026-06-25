@@ -1,0 +1,18 @@
+# Build environment for mnnpy_rev (a maintained fork of chriscainx/mnnpy).
+#
+# Compilers and Cython live ONLY here -- never in a runtime/analysis env. This
+# env builds a wheel; the wheel is then installed into the consuming env (e.g.
+# sc_make_atlas) which needs no build tooling. See tools/build_and_install.sh.
+#
+# The native extension (mnnpy/_utils.pyx) uses typed memoryviews, NOT the numpy
+# C API, so no numpy is needed at build time and the wheel is numpy-version
+# agnostic (numpy 1.x or 2.x at runtime).
+name: mnnpy_build
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - cython          # regenerate _utils.c from the .pyx (py3.10 / modern-Cython compatible)
+  - c-compiler      # gcc, provides OpenMP (libgomp) for the -fopenmp extension
+  - cxx-compiler
