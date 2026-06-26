@@ -5,7 +5,7 @@ from scipy.spatial import cKDTree
 from scipy.linalg import orth
 from scipy.linalg.interpolative import svd as rsvd
 from scipy.sparse import issparse
-from numba import jit, float32, int32, int8
+from numba import jit, njit, float32
 from . import settings
 from .irlb import lanczos
 
@@ -86,23 +86,49 @@ def transform_input_data(datas, cos_norm_in, cos_norm_out, var_index, var_subset
     return in_batches, out_batches, var_sub_index, same_set
 
 
-# forceobj=True due to: Untyped global name 'cKDTree': cannot determine Numba type of <class 'type'>
-@jit((float32[:, :], float32[:, :], int8, int8, int8), forceobj=True)
+@njit(cache=True)
+def _mutual_nn_pairs(k_index_1, k_index_2):
+    """nopython mutual-NN detection over the integer KDTree index arrays.
+
+    Split out of find_mutual_nn precisely so it CAN compile: numba has no type for
+    the cKDTree object, so wrapping the whole function in @jit only ever ran in
+    object mode (forceobj=True) at plain-Python speed. The index-array loop here is
+    pure integer work and compiles to nopython. Iteration order matches the
+    historical Python loop, so the returned pairs are identical element-for-element.
+
+    Each (index_2, neighbor) candidate yields at most one pair, so n2*k1 is an exact
+    upper bound: allocate it once, fill in a single pass, and return the trimmed
+    copy (the copy releases the worst-case buffer).
+    """
+    n2, k1 = k_index_1.shape
+    k2 = k_index_2.shape[1]
+    mutual_1 = np.empty(n2 * k1, dtype=np.int32)
+    mutual_2 = np.empty(n2 * k1, dtype=np.int32)
+    pos = 0
+    for index_2 in range(n2):
+        for a in range(k1):
+            index_1 = k_index_1[index_2, a]
+            for b in range(k2):
+                if k_index_2[index_1, b] == index_2:
+                    mutual_1[pos] = index_1
+                    mutual_2[pos] = index_2
+                    pos += 1
+                    break
+    return mutual_1[:pos].copy(), mutual_2[:pos].copy()
+
+
 def find_mutual_nn(data1, data2, k1, k2, n_jobs):
+    # The cKDTree query is a scipy C-extension (numba has no type for it) -- kept as
+    # a plain call; only the hot mutual-pair loop is JIT-compiled (_mutual_nn_pairs).
     k_index_1 = cKDTree(data1).query(x=data2, k=k1, workers=n_jobs)[1]
     k_index_2 = cKDTree(data2).query(x=data1, k=k2, workers=n_jobs)[1]
-    mutual_1 = []
-    mutual_2 = []
-    for index_2 in range(data2.shape[0]):
-        for index_1 in k_index_1[index_2]:
-            if index_2 in k_index_2[index_1]:
-                mutual_1.append(index_1)
-                mutual_2.append(index_2)
-    return mutual_1, mutual_2
+    return _mutual_nn_pairs(np.ascontiguousarray(k_index_1, dtype=np.int64),
+                            np.ascontiguousarray(k_index_2, dtype=np.int64))
 
 
-# forceobj=True due to: TypeError: np_unique() got an unexpected keyword argument 'return_counts'
-@jit(float32[:, :](float32[:, :], float32[:, :], int32[:], int32[:], float32[:, :], float32), forceobj=True)
+# Plain Python: np.unique(return_counts=...) isn't numba-supported, so @jit here
+# only ever ran in object mode (forceobj=True) -- i.e. no speedup. Dropped the
+# no-op decorator. (kdist, the one hot numeric kernel it calls, is itself @jit'd.)
 def compute_correction(data1, data2, mnn1, mnn2, data2_or_raw2, sigma):
     vect = data1[mnn1] - data2[mnn2]
     mnn_index, mnn_count = np.unique(mnn2, return_counts=True)

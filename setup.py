@@ -20,7 +20,7 @@ with req_path.open() as requirements:
     requires = [l.strip() for l in requirements]
 
 setup(name='mnnpy_rev',  # maintained fork of chriscainx/mnnpy; import name stays `mnnpy`
-      version='0.1.10',
+      version='0.1.11',
       description='Mutual nearest neighbors correction in python.',
       long_description='Correcting batch effects in single-cell expression datasets using the mutual nearest neighbors method.',
       url='http://github.com/chriscainx/mnnpy',
