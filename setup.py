@@ -6,25 +6,31 @@ from setuptools import Extension
 # the build machine's instruction set, and one built on an AVX-512 machine died with SIGILL
 # ("illegal hardware instruction") on CPUs without it. Check a machine with:
 # ld-linux-x86-64.so.2 --help
+# Compiled against Python's stable ABI (limited API) as of 3.11, so one wheel, tagged
+# cp311-abi3, serves Python 3.11 and every later version. Not 3.10: the extension's typed
+# memoryviews need Py_buffer, which entered the limited API in 3.11.
+LIMITED_API_MACROS = [('Py_LIMITED_API', '0x030B0000')]
 try:
     from Cython.Build import cythonize
     extm = cythonize([Extension('mnnpy._utils',
                       ['mnnpy/_utils.pyx'],
                       extra_compile_args = ['-O2', '-ffast-math', '-march=x86-64-v2', '-fopenmp'],
-                      extra_link_args=['-fopenmp'])])
+                      extra_link_args=['-fopenmp'],
+                      define_macros=LIMITED_API_MACROS, py_limited_api=True)])
 except ImportError:
     print('Building with c.')
-    extm = [Extension('mnnpy._utils', 
+    extm = [Extension('mnnpy._utils',
             ['mnnpy/_utils.c'],
             extra_compile_args = ['-O2', '-ffast-math', '-march=x86-64-v2', '-fopenmp'],
-            extra_link_args=['-fopenmp'])]
+            extra_link_args=['-fopenmp'],
+            define_macros=LIMITED_API_MACROS, py_limited_api=True)]
 
 req_path = Path('requirements.txt')
 with req_path.open() as requirements:
     requires = [l.strip() for l in requirements]
 
 setup(name='mnnpy_rev',  # maintained fork of chriscainx/mnnpy; import name stays `mnnpy`
-      version='0.1.12',
+      version='0.1.13',
       description='Mutual nearest neighbors correction in python.',
       long_description='Correcting batch effects in single-cell expression datasets using the mutual nearest neighbors method.',
       url='http://github.com/chriscainx/mnnpy',
@@ -45,4 +51,5 @@ setup(name='mnnpy_rev',  # maintained fork of chriscainx/mnnpy; import name stay
       python_requires='>=3.4',
       py_modules=['irlb', 'mnn', 'utils'],
       ext_modules=extm,
+      options={'bdist_wheel': {'py_limited_api': 'cp311'}},
       zip_safe=False)
